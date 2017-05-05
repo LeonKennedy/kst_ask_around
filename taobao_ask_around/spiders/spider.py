@@ -1,17 +1,26 @@
 #coding:utf-8
+import sys
+reload(sys)
+sys.setdefaultencoding('utf-8')
 import scrapy
 from taobao_ask_around.items import TaobaoAskAroundItem
+from taobao_ask_around.catid import cat_id_list
 import logging
 import json
 import re
-import hashlib
+import hashlib, pdb
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO,filename='crawl.log',filemode='a')
 fh = logging.FileHandler('log')
 logger.addHandler(fh)
 
 # 可以用这个测试
-# cat_id_list = ['50344007']
+#cat_id_list = ['50036362', '50070321', '51034023']
+#cat_id_list = ['51936001', '50096152', '50538038', '51936002']
+#cat_id_list = ['50038000', '50042768', '50042797', '50037957','50106135','50066247']
+#cat_id_list = ['55752011', '50095085', '50095087', '50067376','50067438']
+#cat_id_list = ['50065355%2C27%2C50066173%2C50066049%2C50097129%2C50065355%2C27%2C50066173%2C50066049%2C50097129']
 
 class Ask(scrapy.Spider):
     name = 'ask'
@@ -100,15 +109,15 @@ class Ask(scrapy.Spider):
             now_page = 0
         if now_page < page_count:
             next_page = now_page + 1
-            logger.info('[parse] [cat_id: %s] get next [page:%s]' % (now_cat_id, next_page))
+            logger.info('[parse] [cat_id: %s] get next [page:%s] [%s]' % (now_cat_id, next_page, next_page * page_size))
             next_page_url = 'https://s.taobao.com/search?data-key=s&data-value=%s&ajax=true&cat=%s&sort=sale-desc' % (next_page * page_size, now_cat_id)
             yield scrapy.Request(next_page_url, callback=self.parse,  meta={'category':category,'next_page':next_page})
 
 
     def parse_ask(self, response):
-        logger.info('[parse_ask]')
         item = response.meta['item']
         goods_id = item['goods_id']
+        category_id = item['category_id']
         page = response.meta.get('page')
         try:
             result = json.loads(response.body[9:-1])
@@ -117,7 +126,7 @@ class Ask(scrapy.Spider):
             result = json.loads(re.findall(r'\(([\s\S]+)\)', response.body)[0])
         question_data = result['data']                   
         question_count = question_data['questCount']
-        logger.info('[parse_ask] get question count: %s [goods_id:%s]' % (question_count, goods_id))
+        logger.debug('[parse_ask] get question count: %s [goods_id:%s] [category_id:%s]' % (question_count, goods_id, category_id))
         question_cards = question_data.get('cards', None)
         # 防止request堆积太多导致cookie失效 翻一页 
         if page < int(question_count) / 10.0 :
@@ -126,7 +135,7 @@ class Ask(scrapy.Spider):
             yield scrapy.Request('http://tmp', callback=self.parse_ask, meta={'item':item, 'ask':True, 'page':page}, cookies={'a':0}, dont_filter=True)
     
         if question_cards:
-            logger.info('[parse_ask] [id:%s] get question cards success' % goods_id)
+            logger.info('[parse_ask] [category:%s] [id:%s] get question[%s] cards success' % (category_id,goods_id,question_count))
             ask_around_list = []
             for aq_dic in question_cards:
                 ask_around_dic={}
@@ -145,7 +154,7 @@ class Ask(scrapy.Spider):
                 ask_around_dic['answer_list'] = answer_list
                 ask_around_list.append(ask_around_dic)
             item['ask_around_list'] = ask_around_list
-            logger.info('[parse_ask] [id:%s] yield item' % goods_id)
+            logger.debug('[parse_ask] [id:%s] yield item' % goods_id)
             yield item
                 
 
